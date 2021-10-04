@@ -108,8 +108,15 @@ namespace SinricLibrary
                 {
                     case WebSocketState.Closed:
                     case WebSocketState.None:
-                        WebSocket.OpenAsync().GetAwaiter().GetResult();
-                        Debug.Print($"Websocket connecting to {SinricAddress}");
+                        try
+                        {
+                            WebSocket.OpenAsync().GetAwaiter().GetResult();
+                            Debug.Print($"Websocket connecting to {SinricAddress}");
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.WriteLine(e.Message);
+                        }
                         break;
 
                     case WebSocketState.Open:
