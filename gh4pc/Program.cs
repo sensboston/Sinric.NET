@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Security.Permissions;
 using System.Threading;
+using CSCore.CoreAudioAPI;
 using SinricLibrary;
 using SinricLibrary.Devices;
 
@@ -20,34 +22,29 @@ namespace gh4pc
         const int VK_VOLUME_DOWN = 0xAE;
         const int VK_VOLUME_UP = 0xAF;
 
-		static string APP_KEY = "YOUR_APP_KEY_HERE";             // Should look like "de0bxxxx-1x3x-4x3x-ax2x-5dabxxxxxxxx"
+        static string APP_KEY = "YOUR_APP_KEY_HERE";             // Should look like "de0bxxxx-1x3x-4x3x-ax2x-5dabxxxxxxxx"
         static string APP_SECRET = "YOUR_APP_SECRET_HERE";       // Should look like "5f36xxxx-x3x7-4x3x-xexe-e86724a9xxxx-4c4axxxx-3x3x-x5xe-x9x3-333d65xxxxxx"
         static string DEVICE_ID = "YOUR_DEVICE_ID_HERE";         // Should look like "5dc1564130xxxxxxxxxxxxxx"
-        static string DEVICE_NAME = "My PC";                     // Should be the same as thermostat device name on SinricPro dashboard
+        const string PC_NAME = "My PC";
         const string SERVER_URL = "ws://ws.sinric.pro";
 
-        [STAThread]
-        static void Main(string[] args)
+        [STAThread, SecurityPermission(SecurityAction.Demand, Flags = SecurityPermissionFlag.ControlAppDomain)]
+        static void Main()
         {
-            // Quick and dirty args parsing
-            foreach (var s in args)
-            {
-                if (s.StartsWith("APP_KEY:")) APP_KEY = s.Substring("APP_KEY:".Length);
-                else if (s.StartsWith("APP_SECRET:")) APP_SECRET = s.Substring("APP_SECRET:".Length);
-                else if (s.StartsWith("DEVICE_ID:")) DEVICE_ID = s.Substring("DEVICE_ID:".Length);
-                else if (s.StartsWith("DEVICE_NAME:")) DEVICE_NAME = s.Substring("DEVICE_NAME:".Length);
-            }
-
-            var devices = new List<SinricDeviceBase>();
-            devices.Add(new SinricThermostat(DEVICE_NAME, DEVICE_ID));
+            var devices = new List<SinricDeviceBase> { new SinricThermostat(PC_NAME, DEVICE_ID) };
             var client = new SinricClient(APP_KEY, APP_SECRET, devices) { SinricAddress = SERVER_URL };
-            client.Thermostats(DEVICE_NAME).SetHandler<StateEnums.TargetTemperatureState>(info =>
+            client.Thermostats(PC_NAME).SetHandler<StateEnums.TargetTemperatureState>(info =>
             {
                 switch (info.NewState)
                 {
+                    // Pause
                     case "10":
+                        if (IsAudioPlaying(GetDefaultRenderDevice())) PressKey(VK_MEDIA_PLAY_PAUSE);
+                        break;
+
+                    // Play
                     case "11":
-                        PressKey(VK_MEDIA_PLAY_PAUSE);
+                        if (!IsAudioPlaying(GetDefaultRenderDevice())) PressKey(VK_MEDIA_PLAY_PAUSE);
                         break;
 
                     case "12":
@@ -70,7 +67,7 @@ namespace gh4pc
             });
 
             client.Start();
-            client.Thermostats(DEVICE_NAME).SendNewState(StateEnums.PowerState.On);
+            client.Thermostats(PC_NAME).SendNewState(StateEnums.PowerState.On);
 
             while (true)
             {
@@ -83,6 +80,22 @@ namespace gh4pc
         {
             keybd_event(vkCode, 0, KEYEVENTF_EXTENTEDKEY, IntPtr.Zero);
             keybd_event(vkCode, 0, KEYEVENTF_KEYUP, IntPtr.Zero);
+        }
+
+        public static MMDevice GetDefaultRenderDevice()
+        {
+            using (var enumerator = new MMDeviceEnumerator())
+            {
+                return enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+            }
+        }
+
+        public static bool IsAudioPlaying(MMDevice device)
+        {
+            using (var meter = AudioMeterInformation.FromDevice(device))
+            {
+                return meter?.PeakValue > 0;
+            }
         }
     }
 }
